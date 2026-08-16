@@ -3,194 +3,161 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; connect-src 'self' https://rpc.testnet.arc.io; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'">
     <title>Arc Cross-Border FX & Remittance DApp</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
+    <script src="frontend-utils.js"></script>
     <style>
-        body { background-color: #0b0f19; color: #f3f4f6; font-family: system-ui, -apple-system, sans-serif; }
-        .glass-card { background: rgba(17, 24, 39, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.08); }
-        .btn-gradient { background: linear-gradient(135deg, #2563eb, #3b82f6); }
-        .btn-gradient:hover { background: linear-gradient(135deg, #1d4ed8, #2563eb); }
+        body { background:#0b0f19; color:#f3f4f6; font-family:system-ui,-apple-system,sans-serif }
+        .glass-card { background:rgba(17,24,39,.7); backdrop-filter:blur(12px); border:1px solid rgba(255,255,255,.08) }
+        .btn-gradient { background:linear-gradient(135deg,#2563eb,#3b82f6) }
+        .btn-gradient:disabled { cursor:not-allowed; filter:grayscale(1); opacity:.55 }
     </style>
 </head>
 <body class="min-h-screen flex flex-col justify-between p-4 md:p-8">
-
-    <!-- Header -->
     <header class="max-w-4xl mx-auto w-full flex justify-between items-center py-4 border-b border-gray-800">
         <div class="flex items-center space-x-3">
-            <div class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center font-bold text-xl shadow-lg shadow-blue-500/30">
-                ARC
-            </div>
-            <div>
-                <h1 class="text-xl font-bold tracking-wide">Arc Remittance Protocol</h1>
-                <p class="text-xs text-blue-400 font-mono">Powered by Arc Testnet (Circle L1)</p>
-            </div>
+            <div class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center font-bold text-xl">ARC</div>
+            <div><h1 class="text-xl font-bold">Arc Remittance Protocol</h1><p class="text-xs text-blue-400 font-mono">Arc Testnet</p></div>
         </div>
-
         <div class="flex items-center space-x-3">
-            <button onclick="switchNetwork()" class="hidden md:flex items-center space-x-2 text-xs bg-gray-800 border border-gray-700 px-3 py-2 rounded-lg hover:bg-gray-700 transition">
-                <span class="w-2 h-2 rounded-full bg-green-400"></span>
-                <span>Arc Testnet (5042002)</span>
-            </button>
-            <button id="connectBtn" onclick="connectWallet()" class="btn-gradient text-white text-sm px-4 py-2 rounded-xl font-medium shadow-md transition">
-                Connect Wallet
-            </button>
+            <button id="networkBtn" class="hidden md:block text-xs bg-gray-800 px-3 py-2 rounded-lg">Switch to Arc Testnet</button>
+            <button id="connectBtn" class="btn-gradient text-sm px-4 py-2 rounded-xl font-medium">Connect Wallet</button>
         </div>
     </header>
 
-    <!-- Main Content -->
     <main class="max-w-lg mx-auto w-full my-8">
+        <div id="configWarning" class="hidden mb-4 p-3 rounded-xl border border-amber-700 bg-amber-950/50 text-amber-200 text-sm"></div>
         <div class="glass-card p-6 rounded-2xl shadow-2xl">
-            <div class="flex justify-between items-center mb-6">
-                <h2 class="text-lg font-semibold text-white">Cross-Border FX Transfer</h2>
-                <span class="text-xs px-2.5 py-1 rounded-full bg-blue-900/50 text-blue-300 border border-blue-700/50">Instant ~0.5s Settlement</span>
-            </div>
-
-            <!-- Send Input -->
+            <div class="flex justify-between items-center mb-6"><h2 class="text-lg font-semibold">Cross-Border FX Transfer</h2><span class="text-xs text-blue-300">On-chain settlement</span></div>
             <div class="bg-gray-900/80 p-4 rounded-xl border border-gray-800 mb-3">
-                <div class="flex justify-between text-xs text-gray-400 mb-1">
-                    <span>You Send</span>
-                    <span>Balance: <span id="senderBalance" class="text-gray-200">1,000.00</span></span>
-                </div>
+                <div class="flex justify-between text-xs text-gray-400 mb-1"><span>You Send</span><span>Balance: <span id="senderBalance">—</span></span></div>
                 <div class="flex items-center space-x-2">
-                    <input type="number" id="sendAmount" oninput="calculateRate()" placeholder="0.0" class="bg-transparent text-2xl font-semibold w-full focus:outline-none text-white">
-                    <select id="fromCurrency" onchange="togglePair()" class="bg-gray-800 text-white font-medium text-sm px-3 py-2 rounded-lg border border-gray-700 focus:outline-none">
-                        <option value="USDC">USDC</option>
-                        <option value="EURC">EURC</option>
-                    </select>
+                    <input type="number" min="0" step="any" id="sendAmount" placeholder="0.0" class="bg-transparent text-2xl font-semibold w-full focus:outline-none">
+                    <select id="fromCurrency" class="bg-gray-800 text-sm px-3 py-2 rounded-lg"><option>USDC</option><option>EURC</option></select>
                 </div>
             </div>
-
-            <!-- Swap Toggle -->
-            <div class="flex justify-center -my-1 z-10 relative">
-                <button onclick="swapCurrencies()" class="bg-gray-800 hover:bg-gray-700 p-2 rounded-full border border-gray-700 text-blue-400 transition shadow">
-                    ↓
-                </button>
-            </div>
-
-            <!-- Receive Output -->
+            <div class="flex justify-center -my-1 relative"><button id="swapBtn" class="bg-gray-800 p-2 rounded-full border border-gray-700 text-blue-400" aria-label="Swap currencies">↓</button></div>
             <div class="bg-gray-900/80 p-4 rounded-xl border border-gray-800 mt-3 mb-5">
-                <div class="flex justify-between text-xs text-gray-400 mb-1">
-                    <span>Recipient Receives</span>
-                    <span>Protocol Fee: <span class="text-gray-200">0.1%</span></span>
-                </div>
-                <div class="flex items-center space-x-2">
-                    <input type="text" id="receiveAmount" readonly placeholder="0.0" class="bg-transparent text-2xl font-semibold w-full focus:outline-none text-blue-400">
-                    <select id="toCurrency" disabled class="bg-gray-800 text-gray-300 font-medium text-sm px-3 py-2 rounded-lg border border-gray-700">
-                        <option value="EURC">EURC</option>
-                        <option value="USDC">USDC</option>
-                    </select>
-                </div>
+                <div class="flex justify-between text-xs text-gray-400 mb-1"><span>Recipient Receives</span><span>Fee: 0.1%</span></div>
+                <div class="flex items-center space-x-2"><input id="receiveAmount" readonly placeholder="0.0" class="bg-transparent text-2xl font-semibold w-full text-blue-400"><input id="toCurrency" readonly value="EURC" class="bg-gray-800 text-sm px-3 py-2 rounded-lg w-20"></div>
             </div>
-
-            <!-- Recipient Input -->
-            <div class="mb-6">
-                <label class="block text-xs text-gray-400 mb-1">Recipient Wallet Address (Arc Network)</label>
-                <input type="text" id="recipientAddress" placeholder="0x..." class="bg-gray-900/80 text-sm p-3 rounded-xl border border-gray-800 w-full text-white font-mono focus:border-blue-500 focus:outline-none">
-            </div>
-
-            <!-- Rate Display -->
-            <div class="bg-gray-900/40 p-3 rounded-xl border border-gray-800 text-xs text-gray-400 flex justify-between mb-6">
-                <span>Exchange Rate:</span>
-                <span id="rateDisplay" class="font-mono text-gray-200">1 EURC = 1.0800 USDC</span>
-            </div>
-
-            <!-- Action Button -->
-            <button id="actionBtn" onclick="executeRemittance()" class="w-full btn-gradient py-3.5 rounded-xl font-semibold text-white shadow-lg transition text-sm">
-                Send Remittance
-            </button>
+            <label for="recipientAddress" class="block text-xs text-gray-400 mb-1">Recipient Wallet Address</label>
+            <input id="recipientAddress" autocomplete="off" placeholder="0x..." class="bg-gray-900/80 text-sm p-3 rounded-xl border border-gray-800 w-full font-mono mb-6">
+            <div class="bg-gray-900/40 p-3 rounded-xl text-xs flex justify-between mb-6"><span>Rate:</span><span id="rateDisplay" class="font-mono">Connect wallet for live quote</span></div>
+            <button id="actionBtn" class="w-full btn-gradient py-3.5 rounded-xl font-semibold" disabled>Send Remittance</button>
         </div>
-
-        <!-- Status Box -->
-        <div id="statusCard" class="hidden glass-card p-4 rounded-xl mt-4 border border-blue-900/50">
-            <h3 class="text-xs font-semibold uppercase tracking-wider text-blue-400 mb-2">Transaction Status</h3>
-            <p id="statusText" class="text-sm font-mono text-gray-300">Awaiting user confirmation...</p>
-        </div>
+        <div id="statusCard" class="hidden glass-card p-4 rounded-xl mt-4"><h3 class="text-xs uppercase text-blue-400 mb-2">Transaction Status</h3><p id="statusText" class="text-sm font-mono break-words"></p></div>
     </main>
-
-    <footer class="max-w-4xl mx-auto w-full text-center py-4 border-t border-gray-800 text-xs text-gray-500">
-        Arc Network Demonstration Prototype • Built for ARC Team Review
-    </footer>
+    <footer class="max-w-4xl mx-auto w-full text-center py-4 border-t border-gray-800 text-xs text-gray-500">Arc Network demonstration</footer>
 
     <script>
-        const ARC_TESTNET_CHAIN_ID = "0x4cf10a"; // 5042002
-        const EURC_TO_USDC_RATE = 1.08;
-        let provider, signer, userAddress;
+        "use strict";
+        const ARC_CHAIN_ID = 5042002;
+        const ARC_CHAIN_HEX = "0x4cf10a";
+        // Set after deploying ArcFXRemittance. The app refuses to fake a transaction while unset.
+        const CONTRACT_ADDRESS = "0x1f797d411b05e5061Cd2C663439D994F7E4f943d";
+        const SLIPPAGE_BPS = 50;
+        const ABI = [
+            "function usdcToken() view returns (address)", "function eurcToken() view returns (address)",
+            "function eurcToUsdcRate() view returns (uint256)",
+            "function getEstimatedOutput(address,address,uint256) view returns (uint256,uint256)",
+            "function swapAndRemit(address,address,uint256,uint256,uint256,address) returns (uint256)"
+        ];
+        const ERC20_ABI = ["function decimals() view returns (uint8)", "function balanceOf(address) view returns (uint256)", "function allowance(address,address) view returns (uint256)", "function approve(address,uint256) returns (bool)"];
+        let provider, signer, userAddress, pool, tokens = {};
+        const $ = id => document.getElementById(id);
 
-        async function connectWallet() {
-            if (window.ethereum) {
-                try {
-                    provider = new ethers.providers.Web3Provider(window.ethereum);
-                    await provider.send("eth_requestAccounts", []);
-                    signer = provider.getSigner();
-                    userAddress = await signer.getAddress();
-                    document.getElementById("connectBtn").innerText = userAddress.substring(0, 6) + "..." + userAddress.substring(38);
-                    
-                    const network = await provider.getNetwork();
-                    if (network.chainId !== 5042002) {
-                        await switchNetwork();
-                    }
-                } catch (err) {
-                    alert("Connection error: " + err.message);
-                }
-            } else {
-                alert("Please install MetaMask!");
-            }
+        function setStatus(message, isError = false) {
+            $("statusCard").classList.remove("hidden");
+            $("statusText").textContent = message;
+            $("statusText").className = `text-sm font-mono break-words ${isError ? "text-red-300" : "text-gray-300"}`;
         }
 
         async function switchNetwork() {
-            try {
-                await window.ethereum.request({
-                    method: 'wallet_switchEthereumChain',
-                    params: [{ chainId: ARC_TESTNET_CHAIN_ID }],
-                });
-            } catch (switchError) {
-                if (switchError.code === 4902) {
-                    await window.ethereum.request({
-                        method: 'wallet_addEthereumChain',
-                        params: [{
-                            chainId: ARC_TESTNET_CHAIN_ID,
-                            chainName: 'Arc Testnet',
-                            rpcUrls: ['https://rpc.testnet.arc.io'],
-                            nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 }
-                        }],
-                    });
-                }
+            if (!window.ethereum) throw new Error("No injected wallet found");
+            try { await window.ethereum.request({ method:"wallet_switchEthereumChain", params:[{ chainId:ARC_CHAIN_HEX }] }); }
+            catch (error) {
+                if (error.code !== 4902) throw error;
+                await window.ethereum.request({ method:"wallet_addEthereumChain", params:[{ chainId:ARC_CHAIN_HEX, chainName:"Arc Testnet", rpcUrls:["https://rpc.testnet.arc.io"], nativeCurrency:{ name:"USDC", symbol:"USDC", decimals:18 } }] });
             }
         }
 
-        function calculateRate() {
-            const sendAmt = parseFloat(document.getElementById("sendAmount").value) || 0;
-            const fromCurr = document.getElementById("fromCurrency").value;
-            const netAmount = sendAmt * 0.999; // Less 0.1% fee
-
-            let receiveAmt = fromCurr === "USDC" ? netAmount / EURC_TO_USDC_RATE : netAmount * EURC_TO_USDC_RATE;
-            document.getElementById("receiveAmount").value = receiveAmt > 0 ? receiveAmt.toFixed(4) : "0.0";
+        async function connectWallet() {
+            try {
+                if (!window.ethereum) throw new Error("Install a compatible wallet first");
+                if (!ethers.utils.isAddress(CONTRACT_ADDRESS)) throw new Error("Contract address is not configured by the deployer");
+                provider = new ethers.providers.Web3Provider(window.ethereum, "any");
+                await provider.send("eth_requestAccounts", []);
+                if ((await provider.getNetwork()).chainId !== ARC_CHAIN_ID) await switchNetwork();
+                signer = provider.getSigner(); userAddress = await signer.getAddress();
+                pool = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+                const [usdcAddress, eurcAddress] = await Promise.all([pool.usdcToken(), pool.eurcToken()]);
+                tokens.USDC = { address:usdcAddress, contract:new ethers.Contract(usdcAddress, ERC20_ABI, signer) };
+                tokens.EURC = { address:eurcAddress, contract:new ethers.Contract(eurcAddress, ERC20_ABI, signer) };
+                [tokens.USDC.decimals, tokens.EURC.decimals] = await Promise.all([tokens.USDC.contract.decimals(), tokens.EURC.contract.decimals()]);
+                if (tokens.USDC.decimals !== tokens.EURC.decimals) throw new Error("Configured tokens must use the same decimals");
+                $("connectBtn").textContent = ArcFXUtils.shortAddress(userAddress);
+                $("actionBtn").disabled = false;
+                await refreshQuote();
+            } catch (error) { setStatus(ArcFXUtils.errorMessage(error), true); }
         }
 
-        function togglePair() {
-            const fromCurr = document.getElementById("fromCurrency").value;
-            document.getElementById("toCurrency").value = fromCurr === "USDC" ? "EURC" : "USDC";
-            calculateRate();
-        }
-
-        function swapCurrencies() {
-            const fromSelect = document.getElementById("fromCurrency");
-            fromSelect.value = fromSelect.value === "USDC" ? "EURC" : "USDC";
-            togglePair();
+        async function refreshQuote() {
+            const from = $("fromCurrency").value, to = from === "USDC" ? "EURC" : "USDC";
+            $("toCurrency").value = to;
+            if (!pool || !tokens[from]) return;
+            try {
+                const raw = $("sendAmount").value;
+                const [balance, rate] = await Promise.all([tokens[from].contract.balanceOf(userAddress), pool.eurcToUsdcRate()]);
+                $("senderBalance").textContent = `${ethers.utils.formatUnits(balance, tokens[from].decimals)} ${from}`;
+                $("rateDisplay").textContent = `1 EURC = ${ethers.utils.formatUnits(rate, 18)} USDC`;
+                if (!raw || Number(raw) <= 0) { $("receiveAmount").value = ""; return; }
+                const amountIn = ethers.utils.parseUnits(raw, tokens[from].decimals);
+                const [amountOut] = await pool.getEstimatedOutput(tokens[from].address, tokens[to].address, amountIn);
+                $("receiveAmount").value = ethers.utils.formatUnits(amountOut, tokens[to].decimals);
+            } catch (error) { $("receiveAmount").value = ""; setStatus(ArcFXUtils.errorMessage(error), true); }
         }
 
         async function executeRemittance() {
-            if (!signer) { await connectWallet(); return; }
-            const statusCard = document.getElementById("statusCard");
-            const statusText = document.getElementById("statusText");
-            statusCard.classList.remove("hidden");
-            
-            statusText.innerText = "Processing Remittance on Arc Network (~0.5s finality)...";
-            setTimeout(() => {
-                statusText.innerText = "✅ Remittance Executed Successfully! Settlement complete in 0.48s.";
-            }, 1000);
+            $("actionBtn").disabled = true;
+            try {
+                if ((await provider.getNetwork()).chainId !== ARC_CHAIN_ID) throw new Error("Switch to Arc Testnet");
+                const recipient = $("recipientAddress").value.trim();
+                if (!ethers.utils.isAddress(recipient) || recipient === ethers.constants.AddressZero) throw new Error("Enter a valid non-zero recipient address");
+                const from = $("fromCurrency").value, to = from === "USDC" ? "EURC" : "USDC";
+                const amountIn = ethers.utils.parseUnits($("sendAmount").value, tokens[from].decimals);
+                if (amountIn.lte(0)) throw new Error("Amount must be greater than zero");
+                const [quote] = await pool.getEstimatedOutput(tokens[from].address, tokens[to].address, amountIn);
+                const minOut = ArcFXUtils.minimumOutput(quote, SLIPPAGE_BPS);
+                const allowance = await tokens[from].contract.allowance(userAddress, pool.address);
+                if (allowance.lt(amountIn)) {
+                    setStatus("Approve the exact input amount in your wallet...");
+                    const approval = await tokens[from].contract.approve(pool.address, amountIn);
+                    await approval.wait();
+                }
+                const deadline = Math.floor(Date.now() / 1000) + 300;
+                setStatus("Confirm the remittance in your wallet...");
+                const tx = await pool.swapAndRemit(tokens[from].address, tokens[to].address, amountIn, minOut, deadline, recipient);
+                setStatus(`Submitted: ${tx.hash}\nWaiting for confirmation...`);
+                const receipt = await tx.wait();
+                if (receipt.status !== 1) throw new Error("Transaction reverted");
+                setStatus(`Remittance confirmed in block ${receipt.blockNumber}. Transaction: ${tx.hash}`);
+                await refreshQuote();
+            } catch (error) { setStatus(ArcFXUtils.errorMessage(error), true); }
+            finally { $("actionBtn").disabled = !pool; }
         }
+
+        $("connectBtn").addEventListener("click", connectWallet);
+        $("networkBtn").addEventListener("click", () => switchNetwork().catch(e => setStatus(ArcFXUtils.errorMessage(e), true)));
+        $("sendAmount").addEventListener("input", refreshQuote);
+        $("fromCurrency").addEventListener("change", refreshQuote);
+        $("swapBtn").addEventListener("click", () => { $("fromCurrency").value = $("fromCurrency").value === "USDC" ? "EURC" : "USDC"; refreshQuote(); });
+        $("actionBtn").addEventListener("click", executeRemittance);
+        if (!ethers.utils.isAddress(CONTRACT_ADDRESS)) { $("configWarning").textContent = "Deployment required: configure CONTRACT_ADDRESS before enabling transfers."; $("configWarning").classList.remove("hidden"); }
+        if (window.ethereum) { window.ethereum.on("accountsChanged", () => location.reload()); window.ethereum.on("chainChanged", () => location.reload()); }
     </script>
 </body>
 </html>
+
