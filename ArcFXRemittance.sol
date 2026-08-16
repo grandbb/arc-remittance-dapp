@@ -1,35 +1,27 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-/**
- * @title ArcFXRemittance
- * @notice Cross-Border FX & Instant Remittance Protocol on Arc Testnet
- * @dev Optimized for sub-second, low-cost cross-border stablecoin remittance (USDC <-> EURC).
- */
-
 interface IERC20 {
-    function totalSupply() external view returns (uint256);
     function balanceOf(address account) external view returns (uint256);
     function transfer(address to, uint256 value) external returns (bool);
-    function allowance(address owner, address spender) external view returns (uint256);
-    function approve(address spender, uint256 value) external returns (bool);
     function transferFrom(address from, address to, uint256 value) external returns (bool);
 }
 
+/**
+ * @title ArcFXRemittance
+ * @notice Fixed-rate USDC/EURC remittance pool for Arc Testnet.
+ * @dev Both configured stablecoins are expected to use the same decimals.
+ */
 contract ArcFXRemittance {
-    address public owner;
-    
-    // Stablecoin Addresses on Arc Testnet
-    address public usdcToken;
-    address public eurcToken;
-    
-    // FX Rate: 1 EURC in USDC (Precision: 1e18)
-    // Default: 1 EURC = 1.08 USDC (1.08 * 1e18)
-    uint256 public eurcToUsdcRate; 
-    
-    // Protocol Fee in Basis Points (10 BP = 0.1%)
-    uint256 public feeBasisPoints = 10;
-    uint256 public constant BP_DENOMINATOR = 10000;
+    address public immutable owner;
+    address public immutable usdcToken;
+    address public immutable eurcToken;
+
+    uint256 public eurcToUsdcRate;
+    uint256 public constant FEE_BASIS_POINTS = 10;
+    uint256 public constant BP_DENOMINATOR = 10_000;
+
+    uint256 private _locked = 1;
 
     event RemittanceExecuted(
         address indexed sender,
@@ -40,107 +32,115 @@ contract ArcFXRemittance {
         uint256 amountOut,
         uint256 fee
     );
-
-    event RateUpdated(uint256 newRate);
+    event RateUpdated(uint256 oldRate, uint256 newRate);
     event LiquidityAdded(address indexed token, address indexed provider, uint256 amount);
 
     modifier onlyOwner() {
-        require(msg.sender == owner, "ArcFX: Only owner");
+        require(msg.sender == owner, "ArcFX: only owner");
         _;
     }
 
-    constructor(address _usdcToken, address _eurcToken, uint256 _initialEurcToUsdcRate) {
-        require(_usdcToken != address(0) && _eurcToken != address(0), "ArcFX: Invalid token address");
+    modifier nonReentrant() {
+        require(_locked == 1, "ArcFX: reentrant call");
+        _locked = 2;
+        _;
+        _locked = 1;
+    }
+
+    constructor(address _usdcToken, address _eurcToken, uint256 _initialRate) {
+        require(_usdcToken != address(0) && _eurcToken != address(0), "ArcFX: zero token");
+        require(_usdcToken != _eurcToken, "ArcFX: identical tokens");
+        require(_usdcToken.code.length > 0 && _eurcToken.code.length > 0, "ArcFX: token not contract");
+        require(_initialRate > 0, "ArcFX: zero rate");
+
         owner = msg.sender;
         usdcToken = _usdcToken;
         eurcToken = _eurcToken;
-        eurcToUsdcRate = _initialEurcToUsdcRate;
+        eurcToUsdcRate = _initialRate;
     }
 
-    /**
-     * @notice Set exchange rate (1 EURC = rate USDC / 1e18)
-     */
-    function setEurcToUsdcRate(uint256 _rate) external onlyOwner {
-        require(_rate > 0, "ArcFX: Rate must be > 0");
-        eurcToUsdcRate = _rate;
-        emit RateUpdated(_rate);
+    function setEurcToUsdcRate(uint256 newRate) external onlyOwner {
+        require(newRate > 0, "ArcFX: zero rate");
+        uint256 oldRate = eurcToUsdcRate;
+        eurcToUsdcRate = newRate;
+        emit RateUpdated(oldRate, newRate);
     }
 
-    /**
-     * @notice Calculate estimated output amount and protocol fee
-     */
-    function getEstimatedOutput(address fromToken, address toToken, uint256 amountIn) 
-        public 
-        view 
-        returns (uint256 amountOut, uint256 fee) 
+    function getEstimatedOutput(address fromToken, address toToken, uint256 amountIn)
+        public
+        view
+        returns (uint256 amountOut, uint256 fee)
     {
-        require(
-            (fromToken == usdcToken && toToken == eurcToken) || 
-            (fromToken == eurcToken && toToken == usdcToken),
-            "ArcFX: Unsupported token pair"
-        );
+        _requireSupportedPair(fromToken, toToken);
+        require(amountIn > 0, "ArcFX: zero amount");
 
-        fee = (amountIn * feeBasisPoints) / BP_DENOMINATOR;
+        fee = (amountIn * FEE_BASIS_POINTS) / BP_DENOMINATOR;
         uint256 netAmountIn = amountIn - fee;
-
-        if (fromToken == eurcToken && toToken == usdcToken) {
-            // EURC -> USDC
+        if (fromToken == eurcToken) {
             amountOut = (netAmountIn * eurcToUsdcRate) / 1e18;
         } else {
-            // USDC -> EURC
             amountOut = (netAmountIn * 1e18) / eurcToUsdcRate;
         }
+        require(amountOut > 0, "ArcFX: output rounds to zero");
     }
 
     /**
-     * @notice Swap tokens and remit directly to recipient on Arc Network
+     * @param minAmountOut Revert if the owner-updated rate or rounding returns less.
+     * @param deadline Unix timestamp after which the signed transaction is invalid.
      */
     function swapAndRemit(
         address fromToken,
         address toToken,
         uint256 amountIn,
+        uint256 minAmountOut,
+        uint256 deadline,
         address recipient
-    ) external returns (uint256 amountOut) {
-        require(recipient != address(0), "ArcFX: Invalid recipient");
-        require(amountIn > 0, "ArcFX: Amount must be > 0");
+    ) external nonReentrant returns (uint256 amountOut) {
+        require(block.timestamp <= deadline, "ArcFX: expired");
+        require(recipient != address(0), "ArcFX: zero recipient");
 
         uint256 fee;
         (amountOut, fee) = getEstimatedOutput(fromToken, toToken, amountIn);
+        require(amountOut >= minAmountOut, "ArcFX: slippage");
+        require(IERC20(toToken).balanceOf(address(this)) >= amountOut, "ArcFX: insufficient liquidity");
 
+        uint256 balanceBefore = IERC20(fromToken).balanceOf(address(this));
+        _safeTransferFrom(fromToken, msg.sender, address(this), amountIn);
         require(
-            IERC20(toToken).balanceOf(address(this)) >= amountOut,
-            "ArcFX: Insufficient liquidity in pool"
+            IERC20(fromToken).balanceOf(address(this)) - balanceBefore == amountIn,
+            "ArcFX: fee-on-transfer unsupported"
         );
+        _safeTransfer(toToken, recipient, amountOut);
 
-        // 1. Pull funds from sender
+        emit RemittanceExecuted(msg.sender, recipient, fromToken, toToken, amountIn, amountOut, fee);
+    }
+
+    function addLiquidity(address token, uint256 amount) external nonReentrant {
+        require(token == usdcToken || token == eurcToken, "ArcFX: invalid token");
+        require(amount > 0, "ArcFX: zero amount");
+        uint256 balanceBefore = IERC20(token).balanceOf(address(this));
+        _safeTransferFrom(token, msg.sender, address(this), amount);
+        uint256 received = IERC20(token).balanceOf(address(this)) - balanceBefore;
+        require(received > 0, "ArcFX: no tokens received");
+        emit LiquidityAdded(token, msg.sender, received);
+    }
+
+    function _requireSupportedPair(address fromToken, address toToken) private view {
         require(
-            IERC20(fromToken).transferFrom(msg.sender, address(this), amountIn),
-            "ArcFX: Transfer from sender failed"
-        );
-
-        // 2. Deliver converted funds instantly to recipient wallet
-        require(
-            IERC20(toToken).transfer(recipient, amountOut),
-            "ArcFX: Delivery to recipient failed"
-        );
-
-        emit RemittanceExecuted(
-            msg.sender,
-            recipient,
-            fromToken,
-            toToken,
-            amountIn,
-            amountOut,
-            fee
+            (fromToken == usdcToken && toToken == eurcToken)
+                || (fromToken == eurcToken && toToken == usdcToken),
+            "ArcFX: unsupported pair"
         );
     }
 
-    /**
-     * @notice Add liquidity to the remittance pool
-     */
-    function addLiquidity(address token, uint256 amount) external {
-        require(token == usdcToken || token == eurcToken, "ArcFX: Invalid token");
-        require(IERC20(token).transferFrom(msg.sender, address(this), amount), "ArcFX: Transfer failed");
-        emit LiquidityAdded(token, msg.sender, amount);
+    function _safeTransfer(address token, address to, uint256 amount) private {
+        (bool success, bytes memory data) = token.call(abi.encodeCall(IERC20.transfer, (to, amount)));
+        require(success && (data.length == 0 || abi.decode(data, (bool))), "ArcFX: transfer failed");
+    }
+
+    function _safeTransferFrom(address token, address from, address to, uint256 amount) private {
+        (bool success, bytes memory data) =
+            token.call(abi.encodeCall(IERC20.transferFrom, (from, to, amount)));
+        require(success && (data.length == 0 || abi.decode(data, (bool))), "ArcFX: transferFrom failed");
     }
 }
