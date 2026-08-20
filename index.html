@@ -186,11 +186,9 @@
             const statusText = document.getElementById("statusText");
             statusCard.classList.remove("hidden");
             
-            statusText.innerText = "Processing Remittance on Arc Network (~0.5s finality)...";
-            setTimeout(() => {
-                statusText.innerText = "✅ Remittance Executed Successfully! Settlement complete in 0.48s.";
-            }, 1000);
+            statusText.innerText = "Demo mode: no contract address is configured, so no transaction was submitted. See README.md for local contract tests and the deployment roadmap.";
         }
     </script>
 </body>
 </html>
+

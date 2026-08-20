@@ -1,0 +1,16 @@
+{
+  "name": "arc-remittance-dapp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A testable prototype for stablecoin remittances on Arc Testnet.",
+  "scripts": {
+    "compile": "node scripts/compile.js",
+    "test": "node --test test/remittance.test.js"
+  },
+  "devDependencies": {
+    "ethers": "^6.15.0",
+    "ganache": "^7.9.2",
+    "solc": "^0.8.30"
+  }
+}
+
