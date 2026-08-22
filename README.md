@@ -1,5 +1,7 @@
 # ArcFX Remittance
 
+[![CI](https://github.com/grandbb/arc-remittance-dapp/actions/workflows/ci.yml/badge.svg)](https://github.com/grandbb/arc-remittance-dapp/actions/workflows/ci.yml)
+
 ArcFX is an open-source prototype for direct USDC/EURC remittances on Arc Testnet. A sender deposits one supported stablecoin, the contract applies a 0.1% protocol fee and transfers the quoted output token directly to the recipient.
 
 > Prototype status: this project has not been audited. Use testnet assets only.
@@ -28,6 +30,17 @@ npx serve .
 ```
 
 The interface does not claim an onchain settlement until a deployed contract address is configured. Contract tests are the authoritative executable demonstration in the current prototype.
+
+## Try the contract flow in 5 minutes
+
+The test suite starts an in-memory chain, deploys the mock tokens and remittance contract, adds liquidity, and executes both supported swap directions. No wallet, RPC URL, or testnet funds are required.
+
+```bash
+git clone https://github.com/grandbb/arc-remittance-dapp.git
+cd arc-remittance-dapp
+npm ci
+npm test
+```
 
 ## Contract flow
 
@@ -60,7 +73,17 @@ These limitations are intentionally documented so contributors can review and im
 
 Issues and pull requests are welcome. Please include a test for contract behavior changes and never commit private keys or funded wallet credentials.
 
+Small, self-contained contributions are especially welcome:
+
+- Add a slippage or minimum-output guard to `swapAndRemit`.
+- Add fuzz or boundary tests for FX rates and token decimals.
+- Improve keyboard navigation and status messages in the prototype UI.
+- Document a reproducible Arc Testnet deployment without publishing secrets.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the local workflow and pull-request checklist.
+
 ## License
 
 MIT
+
 
