@@ -4,6 +4,7 @@
   "private": true,
   "description": "A testable prototype for stablecoin remittances on Arc Testnet.",
   "scripts": {
+    "demo": "node scripts/demo.js",
     "compile": "node scripts/compile.js",
     "test": "node --test test/remittance.test.js"
   },

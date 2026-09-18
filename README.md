@@ -33,14 +33,18 @@ The interface does not claim an onchain settlement until a deployed contract add
 
 ## Try the contract flow in 5 minutes
 
-The test suite starts an in-memory chain, deploys the mock tokens and remittance contract, adds liquidity, and executes both supported swap directions. No wallet, RPC URL, or testnet funds are required.
+The demo starts an in-memory chain, deploys 18-decimal mock tokens and the remittance contract, adds liquidity, and executes both supported swap directions. It prints the fee and amount received, then checks each transfer against the contract quote. No wallet, RPC URL, or testnet funds are required.
 
 ```bash
 git clone https://github.com/grandbb/arc-remittance-dapp.git
 cd arc-remittance-dapp
 npm ci
-npm test
+npm run demo
 ```
+
+Example: sending 100 mock USDC charges 0.1 USDC and delivers 92.5 mock EURC at the configured 1.08 rate. The reverse direction sends 100 mock EURC and delivers 107.892 mock USDC. This demonstrates the current contract with equal token decimals; it is not a live exchange quote or a production deployment.
+
+If this example is useful, star the repository to find it again. Fork it when you want to experiment with your own changes; see [CONTRIBUTING.md](CONTRIBUTING.md) for focused improvements.
 
 ## Contract flow
 
