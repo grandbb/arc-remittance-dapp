@@ -1,15 +1,19 @@
 {
   "name": "arc-remittance-dapp",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "A testable prototype for stablecoin remittances on Arc Testnet.",
+  "description": "A mainnet-ready USDC/EURC remittance interface powered by Circle StableFX on Arc.",
   "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
     "demo": "node scripts/demo.js",
     "compile": "node scripts/compile.js",
-    "test": "node --test test/remittance.test.js"
+    "test": "node --test"
+  },
+  "dependencies": {
+    "ethers": "^6.15.0"
   },
   "devDependencies": {
-    "ethers": "^6.15.0",
     "ganache": "^7.9.2",
     "solc": "^0.8.30"
   }

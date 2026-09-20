@@ -1,6 +1,6 @@
 # Contributing to ArcFX Remittance
 
-Thanks for helping improve this testnet prototype. Bug reports, documentation fixes, tests, and focused contract or interface improvements are welcome.
+Thanks for helping improve ArcFX. Bug reports, documentation fixes, tests, and focused server or interface improvements are welcome.
 
 ## Local setup
 
@@ -22,7 +22,7 @@ npm run compile
 4. Run `npm test` and `npm run compile` before opening the pull request.
 5. Explain the user-visible effect and any security assumptions.
 
-Never commit private keys, seed phrases, funded account credentials, or production RPC secrets. This repository is for testnet and local-development use only.
+Never commit private keys, seed phrases, funded account credentials, or Circle API keys. Use Circle sandbox and Arc Testnet for development.
 
 ## Good first contributions
 
