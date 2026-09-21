@@ -3,14 +3,13 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
-const ganache = require("ganache");
-const { BrowserProvider, ContractFactory, parseEther, formatEther } = require("ethers");
+const { ContractFactory, JsonRpcProvider, parseEther, formatEther } = require("ethers");
+const { startHardhatNode } = require("../test/hardhat-node");
 
 async function main() {
   execFileSync(process.execPath, [path.join(__dirname, "compile.js")], { stdio: "inherit" });
-  const chain = ganache.provider({ logging: { quiet: true } });
-  const provider = new BrowserProvider(chain);
-  provider.pollingInterval = 50;
+  const hardhat = await startHardhatNode();
+  const provider = new JsonRpcProvider(hardhat.url);
   try {
     const owner = await provider.getSigner(0);
     const sender = await provider.getSigner(1);
@@ -31,12 +30,20 @@ async function main() {
       await (await token.mint(await sender.getAddress(), parseEther("100"))).wait();
       await (await token.connect(sender).approve(poolAddress, parseEther("100"))).wait();
     }
+    await (await pool.setPaused(false)).wait();
     console.log("\nArcFX local demo | 18-decimal mock tokens | 1 EURC = 1.08 USDC");
     for (const [from, to, label] of [[usdc, eurc, "USDC -> EURC"], [eurc, usdc, "EURC -> USDC"]]) {
       const input = parseEther("100");
       const [quote, fee] = await pool.getEstimatedOutput(await from.getAddress(), await to.getAddress(), input);
       const before = await to.balanceOf(await recipient.getAddress());
-      await (await pool.connect(sender).swapAndRemit(await from.getAddress(), await to.getAddress(), input, await recipient.getAddress())).wait();
+      await (await pool.connect(sender).swapAndRemit(
+        await from.getAddress(),
+        await to.getAddress(),
+        input,
+        quote,
+        Math.floor(Date.now() / 1000) + 300,
+        await recipient.getAddress(),
+      )).wait();
       const received = (await to.balanceOf(await recipient.getAddress())) - before;
       assert.equal(received, quote, "Received amount must match the contract quote");
       console.log(`${label}: sent 100, fee ${formatEther(fee)}, recipient received ${formatEther(received)}`);
@@ -44,7 +51,7 @@ async function main() {
     console.log("Both transfers verified on a temporary local chain. No real funds used.");
   } finally {
     provider.destroy();
-    await chain.disconnect();
+    await hardhat.stop();
   }
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; });

@@ -1,108 +1,110 @@
 # ArcFX Remittance
 
-ArcFX is a USDC/EURC exchange and remittance interface for Arc Mainnet. It uses Circle StableFX for live RFQ pricing and payment-versus-payment settlement instead of the prototype's owner-controlled exchange rate.
+ArcFX is a self-custodial USDC/EURC exchange and remittance interface for Arc. Mainnet uses the existing Uniswap V3 USDC/EURC 0.05% pool. No Circle API key, new contract deployment, or liquidity deposit is required. Testnet retains the separate owner-operated inventory contract.
 
-The browser connects to the user's EVM wallet, verifies every EIP-712 payload against the selected Arc network and official Permit2/token addresses, and signs the quote and funding instructions. A small Node.js server keeps the Circle API key private, validates requests, creates idempotency keys, and proxies the supported StableFX operations.
+## Existing Mainnet liquidity
 
-## Arc Mainnet configuration
+- Pool: `0x6fd5f2fb831940dcd61a98c5b3acb7d8c6f3bfc1`
+- SwapRouter02: `0x53bf6b0684ec7ef91e1387da3d1a1769bc5a6f77`
+- QuoterV2: `0x7dfd4f31be6814d2906bde155c3e1b146eac1468`
+- Factory: `0xf0db7b58379503491d857db50ac9ece64c653918`
 
-| Item | Value |
-| --- | --- |
-| Chain ID | `5042` |
-| RPC | `https://rpc.mainnet.arc.io` |
-| Explorer | `https://explorer.arc.io` |
-| Native gas asset | USDC |
-| USDC ERC-20 interface | `0x3600000000000000000000000000000000000000` |
-| EURC | `0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1` |
-| Permit2 | `0x000000000022D473030F116dDEE9F6B43aC78BA3` |
-| StableFX escrow | `0xe2E5F173576B513d994073CCbDaCBE027d43DFe6` |
+Deployment source: [Uniswap SDK Arc addresses](https://github.com/Uniswap/sdks/blob/main/sdks/sdk-core/src/addresses.ts). The app checks the factory registration, token pair, router and quoter factory addresses, deployed code and active liquidity before using this route. Quotes are simulated through QuoterV2 and include pool fees and price impact. Swaps use exact input with 0.5% slippage protection and a five-minute on-chain deadline, and send output directly to the recipient. This is a single verified pool route, not a best-price aggregator.
 
-USDC and EURC use 6 decimals through their ERC-20 interfaces. Arc's native gas accounting uses the same USDC balance with 18-decimal precision. The UI reads token decimals from each contract and treats the native and ERC-20 USDC views as one asset.
+Run `npm run check:liquidity` to inspect current balances and quotes without signing a transaction. Pool balances are a snapshot, not a guarantee of executable depth for arbitrary amounts.
+
+## How it works
+
+1. The wallet connects to the configured Arc network.
+2. The app simulates a quote against the existing Uniswap pool.
+3. The user approves the input token when required.
+4. One on-chain transaction swaps the tokens and sends the output directly to the recipient.
+
+Quotes expire after five minutes and transactions include a 0.5% minimum-output guard. Mainnet approval is limited to the input amount for SwapRouter02. A simulation and gas-balance check run before requesting the swap signature.
 
 ## Requirements
 
-- Node.js 20 or newer
-- An EIP-1193 wallet with Arc support, such as MetaMask or Rabby
-- A StableFX API key issued by Circle to an approved institution
-- USDC/EURC on Arc and enough USDC remaining for gas
+- Node.js 22.13 or newer for the development tools
+- An EVM wallet such as MetaMask or Rabby
+- Mainnet liquidity is supplied by the existing Uniswap pool
+- USDC for Arc gas and the input stablecoin for the transfer
 
-StableFX is permissioned. Contact your Circle representative to obtain production access; a normal Circle developer API key may not have StableFX permissions.
+No Circle account, StableFX entitlement, or API key is required.
 
-## Run
+## Local setup
 
 ```bash
-npm ci
+npm install
 copy .env.example .env
-npm start
 ```
 
-Edit `.env` before starting:
+For Mainnet, use:
 
 ```dotenv
 ARC_NETWORK=mainnet
-CIRCLE_API_KEY=YOUR_STABLEFX_API_KEY
-CIRCLE_API_BASE_URL=https://api.circle.com
 PORT=3000
 ```
 
-Open `http://localhost:3000`. Do not open `index.html` directly because all StableFX calls must pass through the server.
-
-## Deploy to Vercel
-
-The repository includes a Vercel serverless entrypoint and production routing configuration. Configure `ARC_NETWORK`, `CIRCLE_API_BASE_URL`, and `CIRCLE_API_KEY` in the Vercel project environment, then deploy from the repository root:
+Then run:
 
 ```bash
-npx vercel --prod
+npm start
 ```
 
-For Circle's testing environment, change the network and API together:
+Open `http://localhost:3000`.
+
+## Optional Testnet inventory contract deployment
+
+These steps apply only to `ARC_NETWORK=testnet`. Set `ARC_REMITTANCE_ADDRESS` to the resulting contract. Mainnet does not use this contract.
+
+Compile the contracts with:
+
+```bash
+npm run compile
+```
+
+Deploy `ArcFXRemittance` with:
+
+1. The USDC token address.
+2. The EURC token address.
+3. The initial EURC-to-USDC rate with 18-decimal precision.
+
+The contract starts paused. After deployment, the owner must approve and call `addLiquidity` for both tokens, verify the rate, and then call `setPaused(false)`. Only the owner can add inventory. Withdrawals require the contract to be paused first. Ownership transfers use a two-step process: the current owner calls `transferOwnership`, then the new owner calls `acceptOwnership`.
+
+The owner must keep `eurcToUsdcRate` current with `setEurcToUsdcRate`. Rates expire after one hour by default, and the owner can configure an expiry between five minutes and 24 hours with `setMaxRateAge`. This owner-managed rate is not a market oracle. Production operation therefore needs a monitored rate-publishing process and an owner wallet capable of pausing the contract when updates fail.
+
+## Vercel deployment
+
+Set these environment variables for the desired deployment environment:
 
 ```dotenv
-ARC_NETWORK=testnet
-CIRCLE_API_BASE_URL=https://api-sandbox.circle.com
-CIRCLE_API_KEY=YOUR_TEST_STABLEFX_API_KEY
+ARC_NETWORK=mainnet
 ```
 
-The server will use Arc Testnet chain ID `5042002` and the official testnet EURC/StableFX addresses. Mixing a sandbox quote with Mainnet is rejected in the browser before signing.
+No secret or inventory contract address is needed for Mainnet. Deploy from the repository root using the existing `vercel.json` configuration.
 
-## User flow
-
-1. Connect a wallet and switch to the configured Arc network.
-2. Choose USDC or EURC, enter an amount and the recipient wallet.
-3. Request a tradable StableFX quote from the server.
-4. Review the received amount, rate, fee and expiry.
-5. If needed, approve the selected token for the official Permit2 contract.
-6. Sign the quote, create the trade, sign the funding payload and submit funding.
-7. The app polls the StableFX trade until settlement completes or reaches a terminal state.
-
-The API key never reaches the browser. The server only accepts the USDC/EURC pair, validates amounts and addresses, limits request size and rate, uses request timeouts, adds per-request tracing IDs, and validates a stable per-attempt idempotency key for safe trade retries.
-
-## Test and verify
+## Tests
 
 ```bash
 npm test
-npm run compile
 npm run demo
 ```
 
-The server tests verify official mainnet configuration, payload normalization, API-key isolation, input validation and the disabled-without-credentials behavior. The original Solidity pool and local demo remain only as an offline reference and are not used by the production interface. They have not been audited and must not be deployed for real funds.
+The tests compile the contracts and run transfers on a temporary local Hardhat chain. No real funds are used.
 
-## Production checklist
+## Security notes
 
-- Terminate TLS at a trusted reverse proxy and set `ALLOWED_ORIGINS` to the deployed UI origin.
-- Store `CIRCLE_API_KEY` in a managed secret store and rotate it according to your organization's policy.
-- Register StableFX webhooks, verify Circle's webhook signature, and persist trade state in a database for recovery after process restarts.
-- Add user authentication, sanctions/compliance screening, transaction limits and an operational review trail required for your jurisdiction.
-- Monitor Arc RPC health and StableFX error rates. Use a managed Arc RPC provider for production failover.
-- Complete an independent security review before accepting customer funds.
+- Review and audit the contract before production deployment.
+- Use a multisig or governed owner account for rate updates.
+- Keep the contract paused until both token inventories and the initial rate have been verified.
+- Monitor contract liquidity and pause the frontend if either side is insufficient.
+- Verify the configured contract address and token addresses before funding.
+- The frontend never asks for a seed phrase or private key.
+- Smart-contract transactions are irreversible. Always test on Arc Testnet first.
 
-## Official documentation
+## Network configuration
 
-- [Connect to Arc](https://docs.arc.io/arc/references/connect-to-arc)
-- [Arc contract addresses](https://docs.arc.io/arc/references/contract-addresses)
-- [Arc gas and fees](https://docs.arc.io/arc/references/gas-and-fees)
-- [Circle StableFX overview](https://developers.circle.com/stablefx)
-- [StableFX taker quickstart](https://developers.circle.com/stablefx/quickstarts/fx-trade-taker)
+The server exposes public network configuration to the browser through `/api/config`. Supported values for `ARC_NETWORK` are `mainnet` and `testnet`. Token and RPC addresses are defined in `server.js`.
 
 ## License
 

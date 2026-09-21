@@ -22,7 +22,7 @@ npm run compile
 4. Run `npm test` and `npm run compile` before opening the pull request.
 5. Explain the user-visible effect and any security assumptions.
 
-Never commit private keys, seed phrases, funded account credentials, or Circle API keys. Use Circle sandbox and Arc Testnet for development.
+Never commit private keys, seed phrases, or funded account credentials. Use Arc Testnet for development.
 
 ## Good first contributions
 

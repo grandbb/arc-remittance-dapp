@@ -1,21 +1,24 @@
 {
   "name": "arc-remittance-dapp",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
-  "description": "A mainnet-ready USDC/EURC remittance interface powered by Circle StableFX on Arc.",
+  "description": "A keyless, self-custodial USDC/EURC remittance interface on Arc.",
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
     "demo": "node scripts/demo.js",
     "compile": "node scripts/compile.js",
-    "test": "node --test"
+    "test": "node --test test/frontend.test.js test/remittance.test.js test/server.test.js test/dex.test.js",
+    "check:liquidity": "node scripts/check-liquidity.js"
   },
   "dependencies": {
     "ethers": "^6.15.0"
   },
   "devDependencies": {
-    "ganache": "^7.9.2",
-    "solc": "^0.8.30"
+    "hardhat": "^3.17.0",
+    "solc": "^0.8.37"
+  },
+  "overrides": {
+    "tmp": "0.2.7"
   }
 }
-

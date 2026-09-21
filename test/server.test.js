@@ -1,110 +1,89 @@
 const assert = require("node:assert/strict");
 const http = require("node:http");
 const test = require("node:test");
-const { NETWORKS, createHandler, getRuntimeConfig, validateQuote } = require("../server");
+const { NETWORKS, createHandler, getRuntimeConfig } = require("../server");
 
-async function withServer(fetchImpl, callback, apiKey = "TEST:ID:SECRET") {
+const REMITTANCE_ADDRESS = "0x1111111111111111111111111111111111111111";
+
+async function withServer(callback, remittanceAddress = REMITTANCE_ADDRESS) {
   const config = {
     networkName: "mainnet",
     network: NETWORKS.mainnet,
-    apiBaseUrl: "https://api.circle.test",
-    apiKey,
+    remittanceAddress,
     allowedOrigins: new Set(),
   };
-  const server = http.createServer(createHandler({ config, fetchImpl }));
+  const server = http.createServer(createHandler({ config }));
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   try {
-    const address = server.address();
-    await callback(`http://127.0.0.1:${address.port}`);
+    await callback(`http://127.0.0.1:${server.address().port}`);
   } finally {
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }
 }
 
-test("mainnet configuration uses the official Arc network and Circle token addresses", () => {
-  const config = getRuntimeConfig({ ARC_NETWORK: "mainnet", CIRCLE_API_KEY: "secret" });
+test("mainnet configuration uses the official Arc network and token addresses", () => {
+  const config = getRuntimeConfig({ ARC_NETWORK: "mainnet", ARC_REMITTANCE_ADDRESS: REMITTANCE_ADDRESS });
   assert.equal(config.network.chainId, 5042);
   assert.equal(config.network.rpcUrl, "https://rpc.mainnet.arc.io");
   assert.equal(config.network.usdc, "0x3600000000000000000000000000000000000000");
   assert.equal(config.network.eurc, "0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1");
+  assert.equal(config.remittanceAddress, REMITTANCE_ADDRESS);
 });
 
-test("quote validation limits the API to USDC/EURC and six decimal places", () => {
-  const recipientAddress = "0x1111111111111111111111111111111111111111";
-  const quote = validateQuote({ from: { currency: "USDC", amount: "12.345678" }, to: { currency: "EURC" }, recipientAddress });
-  assert.deepEqual(quote, { from: { currency: "USDC", amount: "12.345678" }, to: { currency: "EURC" }, tenor: "instant", type: "tradable", recipientAddress });
-  assert.throws(() => validateQuote({ from: { currency: "USDT", amount: "1" }, to: { currency: "EURC" }, recipientAddress }), /Only USDC\/EURC/);
-  assert.throws(() => validateQuote({ from: { currency: "USDC", amount: "1.0000001" }, to: { currency: "EURC" }, recipientAddress }), /at most 6/);
+test("configuration rejects an invalid remittance contract address", () => {
+  assert.throws(
+    () => getRuntimeConfig({ ARC_NETWORK: "mainnet", ARC_REMITTANCE_ADDRESS: "not-an-address" }),
+    /valid EVM contract address/,
+  );
+  assert.throws(
+    () => getRuntimeConfig({ ARC_NETWORK: "mainnet", ARC_REMITTANCE_ADDRESS: "0x0000000000000000000000000000000000000000" }),
+    /valid EVM contract address/,
+  );
 });
 
-test("config endpoint never exposes the Circle API key", async () => {
-  await withServer(async () => { throw new Error("upstream should not be called"); }, async (baseUrl) => {
+test("config endpoint exposes only public on-chain configuration", async () => {
+  await withServer(async (baseUrl) => {
     const response = await fetch(`${baseUrl}/api/config`);
-    const text = await response.text();
+    const data = await response.json();
     assert.equal(response.status, 200);
-    assert.equal(text.includes("TEST:ID:SECRET"), false);
-    assert.equal(JSON.parse(text).stableFxConfigured, true);
+    assert.equal(data.remittanceConfigured, true);
+    assert.equal(data.remittanceAddress, REMITTANCE_ADDRESS);
+    assert.equal(Object.hasOwn(data, "apiKey"), false);
+    assert.equal(Object.hasOwn(data, "stableFxConfigured"), false);
   });
 });
 
-test("quote endpoint forwards a normalized payload and server-side authorization", async () => {
-  let upstream;
-  const fetchImpl = async (url, options) => {
-    upstream = { url, options };
-    return new Response(JSON.stringify({ data: { id: "quote-id", rate: "0.92" } }), { status: 200, headers: { "content-type": "application/json" } });
-  };
-  await withServer(fetchImpl, async (baseUrl) => {
-    const response = await fetch(`${baseUrl}/api/stablefx/quotes`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ from: { currency: "USDC", amount: "100.00" }, to: { currency: "EURC" }, recipientAddress: "0x1111111111111111111111111111111111111111", ignored: "value" }),
-    });
+test("the app can start before a remittance contract is deployed", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/config`);
+    const data = await response.json();
     assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), { id: "quote-id", rate: "0.92" });
-  });
-  assert.equal(upstream.url, "https://api.circle.test/v1/exchange/stablefx/quotes");
-  assert.equal(upstream.options.headers.Authorization, "Bearer TEST:ID:SECRET");
-  assert.deepEqual(JSON.parse(upstream.options.body), {
-    from: { currency: "USDC", amount: "100.00" },
-    to: { currency: "EURC" },
-    tenor: "instant",
-    type: "tradable",
-    recipientAddress: "0x1111111111111111111111111111111111111111",
-  });
-});
-
-test("trade retries preserve a caller idempotency key", async () => {
-  const idempotencyKey = "5d845e06-f78f-4b62-891e-d7a17fe4a115";
-  let forwarded;
-  const fetchImpl = async (_url, options) => {
-    forwarded = JSON.parse(options.body);
-    return new Response(JSON.stringify({ data: { id: "7f7188c4-6d4d-49aa-8bea-478ff46bc082" } }), { status: 200 });
-  };
-  await withServer(fetchImpl, async (baseUrl) => {
-    const response = await fetch(`${baseUrl}/api/stablefx/trades`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        idempotencyKey,
-        quoteId: "237f528f-0e69-4527-9826-bf263f4d31f1",
-        address: "0x1111111111111111111111111111111111111111",
-        message: { permitted: { amount: "1000000" } },
-        signature: "0x1234",
-      }),
-    });
-    assert.equal(response.status, 200);
-  });
-  assert.equal(forwarded.idempotencyKey, idempotencyKey);
-});
-
-test("StableFX endpoints remain disabled until a server key is configured", async () => {
-  await withServer(async () => { throw new Error("upstream should not be called"); }, async (baseUrl) => {
-    const response = await fetch(`${baseUrl}/api/stablefx/quotes`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ from: { currency: "USDC", amount: "1" }, to: { currency: "EURC" }, recipientAddress: "0x1111111111111111111111111111111111111111" }),
-    });
-    assert.equal(response.status, 503);
-    assert.match((await response.json()).error, /CIRCLE_API_KEY/);
+    assert.equal(data.remittanceConfigured, false);
+    assert.equal(data.remittanceAddress, "");
   }, "");
+});
+
+test("legacy StableFX proxy endpoints are removed", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/stablefx/quotes`, { method: "POST" });
+    assert.equal(response.status, 404);
+  });
+});
+
+test("Mainnet serves the shared DEX adapter and enables routing without an inventory contract", async () => {
+  const server = http.createServer(createHandler({ config: getRuntimeConfig({ ARC_NETWORK: "mainnet" }) }));
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const config = await (await fetch(`${base}/api/config`)).json();
+    assert.equal(config.liquiditySource, "uniswap-v3");
+    assert.equal(config.dex.fee, 500);
+    const adapter = await fetch(`${base}/dex.js`);
+    assert.equal(adapter.status, 200);
+    assert.match(adapter.headers.get("content-type"), /javascript/);
+    assert.match(await adapter.text(), /quoteExactInputSingle/);
+    const health = await (await fetch(`${base}/api/health`)).json();
+    assert.equal(health.swapConfigured, true);
+    assert.equal(health.remittanceConfigured, false);
+  } finally { await new Promise(resolve => server.close(resolve)); }
 });

@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 /**
  * @title MockStablecoin
- * @notice Contract จำลองเหรียญ USDC และ EURC สำหรับใช้ทดสอบบน Arc Testnet
+ * @notice Mock USDC and EURC tokens for local and Arc Testnet testing.
  */
 contract MockStablecoin {
     string public name;
@@ -18,16 +18,16 @@ contract MockStablecoin {
     event Approval(address indexed owner, address indexed spender, uint256 value);
 
     /**
-     * @param _name ชื่อเหรียญ เช่น "Mock USD Coin" หรือ "Mock Euro Coin"
-     * @param _symbol สัญลักษณ์ เช่น "mUSDC" หรือ "mEURC"
-     * @param _decimals ทศนิยมของเหรียญ เช่น 6 หรือ 18
+     * @param _name Token name, for example "Mock USD Coin".
+     * @param _symbol Token symbol, for example "mUSDC".
+     * @param _decimals Token precision, usually 6 or 18 decimals.
      */
     constructor(string memory _name, string memory _symbol, uint8 _decimals) {
         name = _name;
         symbol = _symbol;
         decimals = _decimals;
         
-        // Mint 1,000,000 เหรียญเริ่มต้นให้กับผู้ Deploy
+        // Mint 1,000,000 tokens to the deployer for testing.
         _mint(msg.sender, 1000000 * (10 ** uint256(_decimals)));
     }
 
@@ -58,7 +58,7 @@ contract MockStablecoin {
     }
 
     /**
-     * @notice สร้างเหรียญเพิ่มใส่กระเป๋าเพื่อนำมาใช้ทดสอบ
+     * @notice Mint additional tokens to an address for testing.
      */
     function mint(address to, uint256 amount) external {
         _mint(to, amount);
